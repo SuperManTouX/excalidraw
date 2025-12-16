@@ -382,6 +382,7 @@ import {
 
 import { Fonts } from "../fonts";
 import { editorJotaiStore, type WritableAtom } from "../editor-jotai";
+import { selectedImageAtom } from "../../../excalidraw-app/atoms/selectedImageAtom";
 import { ImageSceneDataError } from "../errors";
 import {
   getSnapLinesAtPointer,
@@ -3117,6 +3118,19 @@ class App extends React.Component<AppProps, AppState> {
     this.updateEmbeddables();
     const elements = this.scene.getElementsIncludingDeleted();
     const elementsMap = this.scene.getElementsMapIncludingDeleted();
+    
+    // 监听选中元素变化，当选中图片元素时更新selectedImageAtom
+    const selectedElementIdsChanged = JSON.stringify(prevState.selectedElementIds) !== JSON.stringify(this.state.selectedElementIds);
+    if (selectedElementIdsChanged) {
+      const selectedElements = this.scene.getSelectedElements(this.state);
+      if (selectedElements.length === 1 && (selectedElements[0].type === "image"||selectedElements[0].type === "rectangle")) {
+        // 使用jotai原子存储选中的图片元素
+        editorJotaiStore.set(selectedImageAtom, selectedElements[0] as any);
+      } else {
+        // 当没有选中图片元素时，清除selectedImageAtom
+        editorJotaiStore.set(selectedImageAtom, null);
+      }
+    }
 
     if (!this.state.showWelcomeScreen && !elements.length) {
       this.setState({ showWelcomeScreen: true });
@@ -10868,6 +10882,16 @@ class App extends React.Component<AppProps, AppState> {
               lastRetrieved: Date.now(),
             },
           ]);
+          
+          // 使用newElementWith创建一个包含customData的新元素
+          if (imageFile.name) {
+            initializedImageElement = newElementWith(initializedImageElement, {
+              customData: {
+                ...initializedImageElement.customData,
+                name: imageFile.name
+              }
+            });
+          }
 
           if (!this.imageCache.get(fileId)) {
             this.addNewImagesToImageCache();

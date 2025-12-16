@@ -307,3 +307,6 @@ export { getDataURL } from "./data/blob";
 export { isElementLink } from "@excalidraw/element";
 
 export { setCustomTextMetricsProvider } from "@excalidraw/element";
+
+// 导出 api.ts 中的方法和类型
+export * from "./api";

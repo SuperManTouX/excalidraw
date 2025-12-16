@@ -6,6 +6,7 @@ import {
   reconcileElements,
   useEditorInterface,
 } from "@excalidraw/excalidraw";
+import type { Radians } from "@excalidraw/math";
 import { trackEvent } from "@excalidraw/excalidraw/analytics";
 import { getDefaultAppState } from "@excalidraw/excalidraw/appState";
 import {
@@ -17,6 +18,7 @@ import { OverwriteConfirmDialog } from "@excalidraw/excalidraw/components/Overwr
 import { openConfirmModal } from "@excalidraw/excalidraw/components/OverwriteConfirm/OverwriteConfirmState";
 import { ShareableLinkDialog } from "@excalidraw/excalidraw/components/ShareableLinkDialog";
 import Trans from "@excalidraw/excalidraw/components/Trans";
+import { consola } from "consola";
 import {
   APP_NAME,
   EVENT,
@@ -51,6 +53,7 @@ import { isElementLink } from "@excalidraw/element";
 import { restore, restoreAppState } from "@excalidraw/excalidraw/data/restore";
 import { newElementWith } from "@excalidraw/element";
 import { isInitializedImageElement } from "@excalidraw/element";
+import { generateNKeysBetween } from "fractional-indexing";
 import clsx from "clsx";
 import {
   parseLibraryTokensFromUrl,
@@ -61,9 +64,11 @@ import type { RemoteExcalidrawElement } from "@excalidraw/excalidraw/data/reconc
 import type { RestoredDataState } from "@excalidraw/excalidraw/data/restore";
 import type {
   FileId,
+  ExcalidrawElement,
   NonDeletedExcalidrawElement,
   OrderedExcalidrawElement,
 } from "@excalidraw/element/types";
+import type { BinaryFileData, DataURL } from "@excalidraw/excalidraw/types";
 import type {
   AppState,
   ExcalidrawImperativeAPI,
@@ -140,8 +145,12 @@ import "./index.scss";
 
 import { ExcalidrawPlusPromoBanner } from "./components/ExcalidrawPlusPromoBanner";
 import { AppSidebar } from "./components/AppSidebar";
+import { messagesAtom, messagesValueAtom } from "./atoms/messagesAtom";
+import type { Message } from "@excalidraw/excalidraw/components/ChatTabContent";
 
 import type { CollabAPI } from "./collab/Collab";
+
+import { ImageSidebar } from "./components/ImageSidebar";
 
 polyfill();
 
@@ -340,6 +349,7 @@ const initializeScene = async (opts: {
 
 const ExcalidrawWrapper = () => {
   const [errorMessage, setErrorMessage] = useState("");
+  const [showImageSidebar, setShowImageSidebar] = useState(false);
   const isCollabDisabled = isRunningInIframe();
 
   const { editorTheme, appTheme, setAppTheme } = useHandleAppTheme();
@@ -347,6 +357,9 @@ const ExcalidrawWrapper = () => {
   const [langCode, setLangCode] = useAppLangCode();
 
   const editorInterface = useEditorInterface();
+
+  // 消息状态管理
+  const [messages, setMessages] = useAtom(messagesAtom);
 
   // initial state
   // ---------------------------------------------------------------------------
@@ -799,6 +812,365 @@ const ExcalidrawWrapper = () => {
     },
   };
 
+  /**
+   * 从URL导入图片到Excalidraw场景，支持创建占位元素和替换现有占位元素
+   *
+   * 函数有两种主要工作模式：
+   * 1. 当提供imageUrl但未提供placeholderId时，先创建空白占位元素，然后尝试加载并替换为实际图片
+   * 2. 当同时提供imageUrl和placeholderId时，直接尝试将指定占位元素替换为实际图片
+   * 3. 当只提供params而不提供imageUrl时，仅创建空白占位元素
+   *
+   * @param imageUrl 图片URL，为空时仅创建占位元素
+   * @param params 可选参数对象，包含以下属性：
+   *   - x: 元素在画布上的X坐标（默认100）
+   *   - y: 元素在画布上的Y坐标（默认100）
+   *   - width: 元素宽度（默认768）
+   *   - height: 元素高度（默认1024）
+   *   - opacity: 元素透明度（默认100）
+   *   - placeholderId: 要替换的占位元素ID，不提供时创建新占位元素
+   * @returns Promise<string | boolean> 返回结果根据执行情况不同：
+   *   - true: 图片成功加载并导入到画布
+   *   - string: 创建的占位元素ID（当只创建占位元素或图片加载失败时）
+   *   - false: 导入过程中发生错误
+   * @throws 当excalidrawAPI不可用时抛出错误
+   */
+  const importImageFromUrl = async (
+    imageUrl: string,
+    params?: {
+      x?: number;
+      y?: number;
+      width?: number;
+      height?: number;
+      opacity?: number;
+      placeholderId?: string;
+    },
+  ): Promise<string | boolean> => {
+    try {
+      // 参数验证
+      if (!excalidrawAPI) {
+        throw new Error("缺少必要参数：excalidrawAPI");
+      }
+
+      // 获取当前场景元素
+      const currentElements = excalidrawAPI.getSceneElements();
+
+      // 检查是否提供了占位符ID用于替换
+      if (params?.placeholderId && imageUrl) {
+        // 尝试找到对应的占位元素
+        const placeholderElement = currentElements.find((el) =>
+          el.id.includes(params.placeholderId as string),
+        );
+        consola.log(placeholderElement, params.placeholderId);
+
+        if (placeholderElement) {
+          consola.log(`找到要替换的占位元素，ID: ${params.placeholderId}`);
+
+          try {
+            // 验证URL格式
+            new URL(imageUrl);
+
+            consola.log(`开始从URL加载图片: ${imageUrl}`);
+
+            // 获取图片数据并转换为DataURL
+            const response = await fetch(imageUrl);
+
+            if (!response.ok) {
+              throw new Error(
+                `获取图片失败: ${response.status} ${response.statusText}`,
+              );
+            }
+
+            const blob = await response.blob();
+
+            // 验证是否为有效的图片类型
+            if (!blob.type.startsWith("image/")) {
+              throw new Error(`无效的图片类型: ${blob.type}`);
+            }
+
+            // 使用FileReader将blob转换为DataURL
+            const reader = new FileReader();
+            const dataURL = await new Promise<DataURL>((resolve, reject) => {
+              reader.onloadend = () => {
+                const result = reader.result;
+                if (typeof result === "string" && result.startsWith("data:")) {
+                  resolve(result as DataURL);
+                } else {
+                  reject(new Error("无效的DataURL格式"));
+                }
+              };
+              reader.onerror = () => reject(new Error("读取图片数据失败"));
+              reader.readAsDataURL(blob);
+            });
+
+            // 创建唯一的文件ID
+            const fileId = `img_${Date.now()}` as FileId;
+
+            // 创建图片文件数据
+            const binaryFileData = {
+              mimeType: (blob.type.includes("png")
+                ? "image/png"
+                : blob.type.includes("jpg") || blob.type.includes("jpeg")
+                ? "image/jpeg"
+                : blob.type.includes("svg")
+                ? "image/svg+xml"
+                : blob.type.includes("gif")
+                ? "image/gif"
+                : blob.type.includes("webp")
+                ? "image/webp"
+                : blob.type.includes("avif")
+                ? "image/avif"
+                : blob.type.includes("jfif")
+                ? "image/jfif"
+                : blob.type.includes("bmp")
+                ? "image/bmp"
+                : blob.type.includes("ico")
+                ? "image/x-icon"
+                : "image/png") as BinaryFileData["mimeType"],
+              id: fileId,
+              dataURL: dataURL,
+              created: Date.now(),
+            };
+
+            // 先添加图片文件数据
+            excalidrawAPI.addFiles([binaryFileData]);
+
+            // 替换占位元素为实际图片
+            const updatedElementsWithImage = currentElements.map((element) => {
+              if (element.id.includes(params.placeholderId as string)) {
+                // 解构 params，排除 placeholderId
+                const { placeholderId: _, ...restParams } = params || {};
+                // 无论占位元素是什么类型，都转换为图片类型
+                return {
+                  ...element,
+                  type: "image" as const, // 转换为图片类型
+                  fileId: fileId,
+                  status: "saved" as const,
+                  scale: [1, 1],
+                  crop: null,
+                  customData: undefined,
+                  ...restParams,
+                };
+              }
+              return element;
+            }) as ExcalidrawElement[];
+
+            // 更新场景
+            excalidrawAPI.updateScene({
+              elements: updatedElementsWithImage,
+            });
+            consola.success("importImageFromUrl，导入成功");
+            return true;
+          } catch (error) {
+            consola.error("加载图片失败，保留占位元素:", error);
+            return false;
+          }
+        } else {
+          consola.error(`未找到指定的占位元素，ID: ${params.placeholderId}`);
+          return false;
+        }
+      }
+      consola.log(
+        `开始创建新占位元素，imageUrl: ${imageUrl}, params: ${params?.placeholderId}`,
+      );
+      // 如果没有提供占位符ID或没有图片URL，创建新的占位元素
+      if (!imageUrl || !params?.placeholderId) {
+        // 添加计数逻辑 - 统计当前场景中的图片生成器占位元素数量
+        const imageGeneratorCount =
+          currentElements.filter(
+            (element) =>
+              element.type === "rectangle" && element.customData?.isPlaceholder,
+          ).length + 1;
+
+        // 创建空白占位元素，使用矩形元素代替图片占位元素
+        const placeholderId = `placeholder_${Date.now()}`;
+        // 解构 params，排除 placeholderId
+        const { placeholderId: _, ...restParams } = params || {};
+        const newPlaceholderElement = {
+          id: "图片生成器_" + placeholderId,
+          type: "rectangle" as const, // 使用矩形类型代替图片类型
+          x: params?.x || 100,
+          y: params?.y || 100,
+          width: params?.width || 768,
+          height: params?.height || 1024,
+          angle: 0 as Radians,
+          strokeColor: "#000000",
+          backgroundColor: "#f0f0f0", // 浅色背景作为占位
+          fillStyle: "solid" as const,
+          strokeWidth: 1,
+          strokeStyle: "solid" as const,
+          opacity: 100,
+          roughness: 0,
+          seed: Math.random(),
+          version: 1,
+          versionNonce: Math.random(),
+          isDeleted: false,
+          groupIds: [],
+          roundness: null,
+          boundElements: null,
+          link: null,
+          locked: false,
+          index:
+            currentElements.length > 0
+              ? currentElements[currentElements.length - 1].index
+                ? generateNKeysBetween(
+                    currentElements[currentElements.length - 1].index,
+                    null,
+                    1,
+                  )[0]
+                : "a0"
+              : "a0",
+          frameId: null,
+          customData: {
+            name: `图片生成器${imageGeneratorCount}`,
+            isPlaceholder: true,
+            targetUrl: imageUrl,
+          } as any, // 将计数直接集成到名称中
+          updated: Date.now(),
+          ...restParams,
+        };
+
+        // 将新元素添加到场景中
+        const updatedElements = [
+          ...currentElements,
+          newPlaceholderElement,
+        ] as ExcalidrawElement[];
+
+        // 更新场景
+        excalidrawAPI.updateScene({
+          elements: updatedElements,
+        });
+
+        consola.log(`创建了空白占位元素，ID: ${placeholderId}`);
+
+        // 如果提供了imageUrl但没有找到占位符，直接替换刚创建的占位符
+        if (imageUrl) {
+          try {
+            // 验证URL格式
+            new URL(imageUrl);
+
+            consola.log(`开始从URL加载图片: ${imageUrl}`);
+
+            // 获取图片数据并转换为DataURL
+            const response = await fetch(imageUrl);
+
+            if (!response.ok) {
+              throw new Error(
+                `获取图片失败: ${response.status} ${response.statusText}`,
+              );
+            }
+
+            const blob = await response.blob();
+
+            // 验证是否为有效的图片类型
+            if (!blob.type.startsWith("image/")) {
+              throw new Error(`无效的图片类型: ${blob.type}`);
+            }
+
+            // 使用FileReader将blob转换为DataURL
+            const reader = new FileReader();
+            const dataURL = await new Promise<DataURL>((resolve, reject) => {
+              reader.onloadend = () => {
+                const result = reader.result;
+                if (typeof result === "string" && result.startsWith("data:")) {
+                  resolve(result as DataURL);
+                } else {
+                  reject(new Error("无效的DataURL格式"));
+                }
+              };
+              reader.onerror = () => reject(new Error("读取图片数据失败"));
+              reader.readAsDataURL(blob);
+            });
+
+            // 创建唯一的文件ID
+            const fileId = `img_${Date.now()}` as FileId;
+
+            // 创建图片文件数据
+            const binaryFileData = {
+              mimeType: (blob.type.includes("png")
+                ? "image/png"
+                : blob.type.includes("jpg") || blob.type.includes("jpeg")
+                ? "image/jpeg"
+                : blob.type.includes("svg")
+                ? "image/svg+xml"
+                : blob.type.includes("gif")
+                ? "image/gif"
+                : blob.type.includes("webp")
+                ? "image/webp"
+                : blob.type.includes("avif")
+                ? "image/avif"
+                : blob.type.includes("jfif")
+                ? "image/jfif"
+                : blob.type.includes("bmp")
+                ? "image/bmp"
+                : blob.type.includes("ico")
+                ? "image/x-icon"
+                : "image/png") as BinaryFileData["mimeType"],
+              id: fileId,
+              dataURL: dataURL,
+              created: Date.now(),
+            };
+
+            // 先添加图片文件数据
+            excalidrawAPI.addFiles([binaryFileData]);
+
+            // 找到占位元素并替换为实际图片
+            const updatedElementsWithImage = updatedElements.map((element) => {
+              if (element.id === placeholderId) {
+                return {
+                  ...element,
+                  fileId: fileId,
+                  status: "saved" as const,
+                  backgroundColor: "#ffffff",
+                  customData: undefined,
+                };
+              }
+              return element;
+            });
+
+            // 更新场景
+            excalidrawAPI.updateScene({
+              elements: updatedElementsWithImage,
+            });
+
+            consola.log(`占位元素已替换为实际图片`);
+
+            // 显示成功提示
+            excalidrawAPI.setToast({ message: "图片已成功导入到画布！" });
+
+            // 自动切换到选择工具
+            excalidrawAPI.setActiveTool({ type: "selection" });
+
+            return true;
+          } catch (error) {
+            console.error("加载图片失败，保留占位元素:", error);
+            // 保留占位元素，返回占位符ID
+            return placeholderId;
+          }
+        }
+
+        // 如果没有提供imageUrl，只返回占位符ID
+        return placeholderId;
+      }
+
+      // 默认返回值，确保所有代码路径都有返回值
+      return false;
+    } catch (error) {
+      console.error("图片导入失败:", error);
+
+      // 显示错误提示
+      if (excalidrawAPI) {
+        excalidrawAPI.setToast({
+          message:
+            error instanceof Error
+              ? `导入图片失败: ${error.message}`
+              : "导入图片失败，请重试。",
+        });
+      }
+
+      return false;
+    }
+  };
+
   return (
     <div
       style={{ height: "100%" }}
@@ -851,12 +1223,54 @@ const ExcalidrawWrapper = () => {
         autoFocus={true}
         theme={editorTheme}
         renderTopRightUI={(isMobile) => {
+          // 导入逻辑开始
+          // 无论是否移动设备，都显示我们的图片导入按钮
+          const importImageButton = (
+            <button
+              className="ImageImportButton"
+              style={{
+                padding: "8px 12px",
+                margin: "8px",
+                backgroundColor: "#007bff",
+                color: "white",
+                border: "none",
+                borderRadius: "4px",
+                cursor: "pointer",
+                fontSize: "14px",
+                fontWeight: "bold",
+                zIndex: 100,
+              }}
+              onClick={async () => {
+                if (excalidrawAPI) {
+                  // https://liblibai-tmp-image.liblib.cloud/img/1a5a53cfca8e43b797ac32e91ec40bf4/fc71a2c32ed04a762ca7d10ef895ed33559acf72cbdb8a41500bd43c91efaedf.png
+                  await importImageFromUrl("");
+                }
+              }}
+            >
+              导入图片
+            </button>
+          );
+
+          // 导入逻辑结束
           if (isMobile || !collabAPI || isCollabDisabled) {
-            return null;
+            return (
+              <div className="excalidraw-ui-top-right">{importImageButton}</div>
+            );
           }
 
           return (
             <div className="excalidraw-ui-top-right">
+              {importImageButton}
+              <button
+                onClick={() => {
+                  setShowImageSidebar(true);
+                  consola.log("打开空侧边栏");
+                }}
+                className="ToolButton"
+                style={{ marginLeft: "8px" }}
+              >
+                打开空侧边栏
+              </button>
               {excalidrawAPI?.getEditorInterface().formFactor === "desktop" && (
                 <ExcalidrawPlusPromoBanner
                   isSignedIn={isExcalidrawPlusSignedUser}
@@ -881,6 +1295,7 @@ const ExcalidrawWrapper = () => {
           }
         }}
       >
+        {/* 画布主体 */}
         <AppMainMenu
           onCollabDialogOpen={onCollabDialogOpen}
           isCollaborating={isCollaborating}
@@ -937,7 +1352,12 @@ const ExcalidrawWrapper = () => {
         {excalidrawAPI && !isCollabDisabled && (
           <Collab excalidrawAPI={excalidrawAPI} />
         )}
-
+        {showImageSidebar && (
+          <ImageSidebar
+            onClose={() => setShowImageSidebar(false)}
+            importImageFromUrl={importImageFromUrl}
+          />
+        )}
         <ShareDialog
           collabAPI={collabAPI}
           onExportToBackend={async () => {
@@ -955,7 +1375,11 @@ const ExcalidrawWrapper = () => {
           }}
         />
 
-        <AppSidebar />
+        <AppSidebar
+          importImageFromUrl={importImageFromUrl}
+          messages={messages}
+          setMessages={setMessages}
+        />
 
         {errorMessage && (
           <ErrorDialog onClose={() => setErrorMessage("")}>
@@ -1133,6 +1557,21 @@ const ExcalidrawWrapper = () => {
                 setAppTheme(
                   editorTheme === THEME.DARK ? THEME.LIGHT : THEME.DARK,
                 );
+              },
+            },
+            {
+              label: "123",
+              category: DEFAULT_CATEGORIES.app,
+              predicate: () => !!pwaEvent,
+              perform: () => {
+                if (pwaEvent) {
+                  pwaEvent.prompt();
+                  pwaEvent.userChoice.then(() => {
+                    // event cannot be reused, but we'll hopefully
+                    // grab new one as the event should be fired again
+                    pwaEvent = null;
+                  });
+                }
               },
             },
             {

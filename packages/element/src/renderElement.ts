@@ -419,6 +419,38 @@ const drawElementOnCanvas = (
     case "embeddable":
     case "diamond":
     case "ellipse": {
+      // 为矩形元素绘制名称标签和分辨率
+      if (element.type === "rectangle") {
+        // 先保存上下文状态
+        context.save();
+        
+        // 绘制名称标签在矩形外层左上角
+        context.font = `12px Arial`;
+        context.fillStyle = "rgba(0, 0, 0, 0.7)";
+        context.fillRect(-5, -20, 80, 18); // 半透明背景，放在矩形左上角外部
+        context.fillStyle = "white";
+        
+        // 使用文件名（如果有customData中的name字段）或默认名称
+        const rectangleName = element.customData?.name || `矩形_${element.id.substring(0, 8)}`;
+        context.fillText(rectangleName, -2, -7);
+        
+        // 绘制分辨率在矩形正下方
+        const resolutionText = `${Math.round(element.width)}×${Math.round(element.height)}`;
+        const textWidth = context.measureText(resolutionText).width;
+        // 计算居中位置
+        const textX = (element.width - textWidth) / 2;
+        const textY = element.height + 15;
+        
+        // 绘制分辨率背景
+        context.fillStyle = "rgba(0, 0, 0, 0.7)";
+        context.fillRect(textX - 3, textY - 15, textWidth + 6, 18);
+        context.fillStyle = "white";
+        context.fillText(resolutionText, textX, textY - 3);
+        
+        // 恢复上下文状态以便不影响矩形渲染
+        context.restore();
+      }
+      
       context.lineJoin = "round";
       context.lineCap = "round";
       rc.draw(ShapeCache.get(element)!);
@@ -453,6 +485,23 @@ const drawElementOnCanvas = (
       break;
     }
     case "image": {
+      // 先保存上下文状态
+      context.save();
+      
+      // 绘制图片名称标签在图片外层左上角
+      context.font = `12px Arial`;
+      context.fillStyle = "rgba(0, 0, 0, 0.7)";
+      context.fillRect(-5, -20, 80, 18); // 半透明背景，放在图片左上角外部
+      context.fillStyle = "white";
+      
+      // 使用文件名（如果有customData中的name字段）或默认名称
+      const imageName = element.customData?.name || `图片_${element.fileId?.substring(0, 8) || '未命名'}`;
+      context.fillText(imageName, -2, -7);
+      
+      // 恢复上下文状态以便不影响图片渲染
+      context.restore();
+      
+      // 现在渲染图片本身
       const img = isInitializedImageElement(element)
         ? renderConfig.imageCache.get(element.fileId)?.image
         : undefined;
@@ -492,6 +541,28 @@ const drawElementOnCanvas = (
       } else {
         drawImagePlaceholder(element, context);
       }
+      
+      // 在图片下方显示具体宽高像素
+      context.save();
+      context.font = `12px Arial`;
+      context.fillStyle = "rgba(0, 0, 0, 0.7)";
+      
+      // 将宽高四舍五入后显示
+      const roundedWidth = Math.round(element.width);
+      const roundedHeight = Math.round(element.height);
+      const pixelSize = `${roundedWidth}×${roundedHeight}`;
+      
+      // 绘制半透明背景
+      const textWidth = context.measureText(pixelSize).width;
+      context.fillRect(element.width / 2 - textWidth / 2 - 5, element.height + 2, textWidth + 10, 18);
+      
+      // 绘制宽高像素文字
+      context.fillStyle = "white";
+      context.textAlign = "center";
+      context.fillText(pixelSize, element.width / 2, element.height + 14);
+      
+      context.restore();
+      
       break;
     }
     default: {

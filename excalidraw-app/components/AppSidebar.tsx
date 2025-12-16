@@ -5,14 +5,36 @@ import {
 } from "@excalidraw/excalidraw/components/icons";
 import { LinkButton } from "@excalidraw/excalidraw/components/LinkButton";
 import { useUIAppState } from "@excalidraw/excalidraw/context/ui-appState";
+import type { Message } from "@excalidraw/excalidraw/components/ChatTabContent";
 
 import "./AppSidebar.scss";
-
-export const AppSidebar = () => {
+export const AppSidebar = ({
+  importImageFromUrl,
+  messages,
+  setMessages,
+}: {
+  importImageFromUrl: (
+    imageUrl: string,
+    params?: {
+      x?: number;
+      y?: number;
+      width?: number;
+      height?: number;
+      opacity?: number;
+      placeholderId?: string;
+    },
+  ) => Promise<string | boolean>;
+  messages: Message[];
+  setMessages: React.Dispatch<React.SetStateAction<Message[]>>;
+}) => {
   const { theme, openSidebar } = useUIAppState();
 
   return (
-    <DefaultSidebar>
+    <DefaultSidebar
+      importImageFromUrl={importImageFromUrl}
+      messages={messages}
+      setMessages={setMessages}
+    >
       <DefaultSidebar.TabTriggers>
         <Sidebar.TabTrigger
           tab="comments"
