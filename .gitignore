@@ -6,6 +6,9 @@
 .envrc
 .eslintcache
 .history
+.husky
+.github
+.codesandbox
 .idea
 .vercel
 .vscode

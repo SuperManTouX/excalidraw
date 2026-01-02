@@ -1,6 +1,6 @@
 import { Sidebar } from "@excalidraw/excalidraw";
 import { useState, useEffect } from "react";
-import { consola } from "consola";
+import { DefaultLogger } from "@excalidraw/common";
 import { useAtom } from "@excalidraw/excalidraw/editor-jotai";
 import {
   generateImage,
@@ -48,10 +48,10 @@ export const ImageSidebar = ({
       selectedImage.id.includes("placeholder")
     ) {
       setSelectedPlaceholderId(selectedImage.id);
-      consola.info("从选中元素中检测到占位符ID:", selectedImage.id);
+      DefaultLogger.info("从选中元素中检测到占位符ID:", selectedImage.id);
     } else {
       setSelectedPlaceholderId(null);
-      consola.debug("selectedPlaceholderId置空");
+      DefaultLogger.debug("selectedPlaceholderId置空");
     }
   }, [selectedImage]);
 
@@ -253,7 +253,7 @@ export const ImageSidebar = ({
 
   // 开始生成
   const handleGenerate = async () => {
-    consola.debug("selectedPlaceholderId:", selectedPlaceholderId);
+    DefaultLogger.debug("selectedPlaceholderId:", selectedPlaceholderId);
 
     try {
       let placeholderId: string | boolean = selectedPlaceholderId || "";
@@ -267,12 +267,12 @@ export const ImageSidebar = ({
         // 存储占位元素ID
         if (typeof placeholderId === "string") {
           setSelectedPlaceholderId(placeholderId);
-          consola.log("接受占位元ID:", placeholderId);
+          DefaultLogger.log("接受占位元ID:", placeholderId);
         }
       }
 
       // 显示连接中消息
-      consola.info("开始生成图片");
+      DefaultLogger.info("开始生成图片");
 
       // 调用健康检查接口
       const healthResponse = await fetch("http://localhost:3001/api/health");
@@ -328,7 +328,7 @@ export const ImageSidebar = ({
             steps: 30, // 采样步数，建议30
           },
         };
-        consola.debug(generateParams);
+        DefaultLogger.debug(generateParams);
 
         // const generateResponse = await generateImage(generateParams);
         // const generateResponse = {
@@ -351,7 +351,7 @@ export const ImageSidebar = ({
             try {
               const statusResponse = await getStatus(generateUuid);
               const statusData = statusResponse.data;
-              consola.log(`状态检查: ${generateUuid}`, statusData);
+              DefaultLogger.log(`状态检查: ${generateUuid}`, statusData);
 
               // 确保statusData存在
               if (!statusData) {
@@ -374,9 +374,9 @@ export const ImageSidebar = ({
                     })
                       .then((result) => {
                         if (result !== true) {
-                          consola.warn("图片导入失败或未替换占位元素");
+                          DefaultLogger.warn("图片导入失败或未替换占位元素");
                         } else {
-                          consola.success("图片已成功导入并替换占位元素");
+                          DefaultLogger.success("图片已成功导入并替换占位元素");
                           // 清除占位符ID
                           setSelectedPlaceholderId(null);
                         }
@@ -385,9 +385,9 @@ export const ImageSidebar = ({
                         console.error("图片导入出错:", error);
                       });
                   } else {
-                    consola.warn("importImageFromUrl 函数未提供，无法导入图片");
+                    DefaultLogger.warn("importImageFromUrl 函数未提供，无法导入图片");
                   }
-                  consola.success(`图片导入成功: ${image.imageUrl}`);
+                  DefaultLogger.success(`图片导入成功: ${image.imageUrl}`);
                 });
               }
 
@@ -403,7 +403,7 @@ export const ImageSidebar = ({
           // 开始轮询
           setTimeout(pollStatus, 1000);
         } else {
-          consola.debug("没有generateUuid，直接显示结果");
+          DefaultLogger.debug("没有generateUuid，直接显示结果");
         }
       } else {
       }

@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect } from "react";
 import { getStatus, generateImage } from "../api";
-import { consola } from "consola";
+import { DefaultLogger } from "@excalidraw/common";
 import "./ChatTabContent.scss";
 // 模拟回复消息
 export const MOCK_REPLY = "感谢您的消息！这是一条固定的回复内容。";
@@ -166,7 +166,7 @@ export const ChatTabContent: React.FC<{
             try {
               const statusResponse = await getStatus(generateUuid);
               const statusData = statusResponse.data;
-              consola.log(`状态检查: ${generateUuid}`, statusData);
+              DefaultLogger.log(`状态检查: ${generateUuid}`, statusData);
 
               // 确保statusData存在
               if (!statusData) {
@@ -211,7 +211,7 @@ export const ChatTabContent: React.FC<{
                         console.error("图片导入出错:", error);
                       });
                   } else {
-                    consola.log("importImageFromUrl 函数未提供，无法导入图片");
+                    DefaultLogger.log("importImageFromUrl 函数未提供，无法导入图片");
                   }
                   // 显示生成成功消息
                   const successMessage: Message = {
@@ -368,3 +368,6 @@ export const ChatTabContent: React.FC<{
     </div>
   );
 };
+
+
+

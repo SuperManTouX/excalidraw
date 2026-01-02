@@ -1,5 +1,5 @@
 import axios from "axios";
-import { consola } from "consola";
+import { DefaultLogger } from "@excalidraw/common";
 
 // 定义与后端一致的类型
 export const TaskStatus = {
@@ -91,7 +91,7 @@ export const generateImage = async (
       details: "服务器返回了不符合预期格式的响应",
     };
   } catch (error) {
-    consola.error(error);
+    DefaultLogger.error(error);
     // 处理其他类型的错误
     return {
       success: false,
@@ -123,7 +123,7 @@ export const getStatus = async (
       details: "服务器返回了不符合预期格式的响应",
     };
   } catch (error) {
-    consola.error(error);
+    DefaultLogger.error(error);
     // 处理其他类型的错误
     return {
       success: false,

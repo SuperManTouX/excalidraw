@@ -18,7 +18,6 @@ import { OverwriteConfirmDialog } from "@excalidraw/excalidraw/components/Overwr
 import { openConfirmModal } from "@excalidraw/excalidraw/components/OverwriteConfirm/OverwriteConfirmState";
 import { ShareableLinkDialog } from "@excalidraw/excalidraw/components/ShareableLinkDialog";
 import Trans from "@excalidraw/excalidraw/components/Trans";
-import { consola } from "consola";
 import {
   APP_NAME,
   EVENT,
@@ -32,6 +31,7 @@ import {
   resolvablePromise,
   isRunningInIframe,
   isDevEnv,
+  DefaultLogger,
 } from "@excalidraw/common";
 import polyfill from "@excalidraw/excalidraw/polyfill";
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -860,16 +860,16 @@ const ExcalidrawWrapper = () => {
         const placeholderElement = currentElements.find((el) =>
           el.id.includes(params.placeholderId as string),
         );
-        consola.log(placeholderElement, params.placeholderId);
+        DefaultLogger.log(placeholderElement, params.placeholderId);
 
         if (placeholderElement) {
-          consola.log(`找到要替换的占位元素，ID: ${params.placeholderId}`);
+          DefaultLogger.log(`找到要替换的占位元素，ID: ${params.placeholderId}`);
 
           try {
             // 验证URL格式
             new URL(imageUrl);
 
-            consola.log(`开始从URL加载图片: ${imageUrl}`);
+            DefaultLogger.log(`开始从URL加载图片: ${imageUrl}`);
 
             // 获取图片数据并转换为DataURL
             const response = await fetch(imageUrl);
@@ -958,18 +958,18 @@ const ExcalidrawWrapper = () => {
             excalidrawAPI.updateScene({
               elements: updatedElementsWithImage,
             });
-            consola.success("importImageFromUrl，导入成功");
+            DefaultLogger.success("importImageFromUrl，导入成功");
             return true;
           } catch (error) {
-            consola.error("加载图片失败，保留占位元素:", error);
+            DefaultLogger.error("加载图片失败，保留占位元素:", error);
             return false;
           }
         } else {
-          consola.error(`未找到指定的占位元素，ID: ${params.placeholderId}`);
+          DefaultLogger.error(`未找到指定的占位元素，ID: ${params.placeholderId}`);
           return false;
         }
       }
-      consola.log(
+      DefaultLogger.log(
         `开始创建新占位元素，imageUrl: ${imageUrl}, params: ${params?.placeholderId}`,
       );
       // 如果没有提供占位符ID或没有图片URL，创建新的占位元素
@@ -1040,7 +1040,7 @@ const ExcalidrawWrapper = () => {
           elements: updatedElements,
         });
 
-        consola.log(`创建了空白占位元素，ID: ${placeholderId}`);
+        DefaultLogger.log(`创建了空白占位元素，ID: ${placeholderId}`);
 
         // 如果提供了imageUrl但没有找到占位符，直接替换刚创建的占位符
         if (imageUrl) {
@@ -1048,7 +1048,7 @@ const ExcalidrawWrapper = () => {
             // 验证URL格式
             new URL(imageUrl);
 
-            consola.log(`开始从URL加载图片: ${imageUrl}`);
+            DefaultLogger.log(`开始从URL加载图片: ${imageUrl}`);
 
             // 获取图片数据并转换为DataURL
             const response = await fetch(imageUrl);
@@ -1132,7 +1132,7 @@ const ExcalidrawWrapper = () => {
               elements: updatedElementsWithImage,
             });
 
-            consola.log(`占位元素已替换为实际图片`);
+            DefaultLogger.log(`占位元素已替换为实际图片`);
 
             // 显示成功提示
             excalidrawAPI.setToast({ message: "图片已成功导入到画布！" });
@@ -1178,123 +1178,108 @@ const ExcalidrawWrapper = () => {
         "is-collaborating": isCollaborating,
       })}
     >
-      <Excalidraw
-        excalidrawAPI={excalidrawRefCallback}
-        onChange={onChange}
-        initialData={initialStatePromiseRef.current.promise}
-        isCollaborating={isCollaborating}
-        onPointerUpdate={collabAPI?.onPointerUpdate}
-        UIOptions={{
-          canvasActions: {
-            toggleTheme: true,
-            export: {
-              onExportToBackend,
-              renderCustomUI: excalidrawAPI
-                ? (elements, appState, files) => {
-                    return (
-                      <ExportToExcalidrawPlus
-                        elements={elements}
-                        appState={appState}
-                        files={files}
-                        name={excalidrawAPI.getName()}
-                        onError={(error) => {
-                          excalidrawAPI?.updateScene({
-                            appState: {
-                              errorMessage: error.message,
-                            },
-                          });
-                        }}
-                        onSuccess={() => {
-                          excalidrawAPI.updateScene({
-                            appState: { openDialog: null },
-                          });
-                        }}
-                      />
-                    );
-                  }
-                : undefined,
-            },
+      <Excalidraw excalidrawAPI={excalidrawRefCallback} onChange={onChange} initialData={initialStatePromiseRef.current.promise} isCollaborating={isCollaborating} onPointerUpdate={collabAPI?.onPointerUpdate} UIOptions={{
+        canvasActions: {
+          toggleTheme: true,
+          export: {
+            onExportToBackend,
+            renderCustomUI: excalidrawAPI
+              ? (elements, appState, files) => {
+                return (
+                  <ExportToExcalidrawPlus
+                    elements={elements}
+                    appState={appState}
+                    files={files}
+                    name={excalidrawAPI.getName()}
+                    onError={(error) => {
+                      excalidrawAPI?.updateScene({
+                        appState: {
+                          errorMessage: error.message,
+                        },
+                      });
+                    }}
+                    onSuccess={() => {
+                      excalidrawAPI.updateScene({
+                        appState: { openDialog: null },
+                      });
+                    }}
+                  />
+                );
+              }
+              : undefined,
           },
-        }}
-        langCode={langCode}
-        renderCustomStats={renderCustomStats}
-        detectScroll={false}
-        handleKeyboardGlobally={true}
-        autoFocus={true}
-        theme={editorTheme}
-        renderTopRightUI={(isMobile) => {
-          // 导入逻辑开始
-          // 无论是否移动设备，都显示我们的图片导入按钮
-          const importImageButton = (
-            <button
-              className="ImageImportButton"
-              style={{
-                padding: "8px 12px",
-                margin: "8px",
-                backgroundColor: "#007bff",
-                color: "white",
-                border: "none",
-                borderRadius: "4px",
-                cursor: "pointer",
-                fontSize: "14px",
-                fontWeight: "bold",
-                zIndex: 100,
-              }}
-              onClick={async () => {
-                if (excalidrawAPI) {
-                  // https://liblibai-tmp-image.liblib.cloud/img/1a5a53cfca8e43b797ac32e91ec40bf4/fc71a2c32ed04a762ca7d10ef895ed33559acf72cbdb8a41500bd43c91efaedf.png
-                  await importImageFromUrl("");
-                }
-              }}
-            >
-              导入图片
-            </button>
-          );
+        },
+      }} langCode={langCode} renderCustomStats={renderCustomStats} detectScroll={false} handleKeyboardGlobally={true} autoFocus={true} theme={editorTheme} renderTopRightUI={(isMobile) => {
+        // 导入逻辑开始
+        // 无论是否移动设备，都显示我们的图片导入按钮
+        const importImageButton = (
+          <button
+            className="ImageImportButton"
+            style={{
+              padding: "8px 12px",
+              margin: "8px",
+              backgroundColor: "#007bff",
+              color: "white",
+              border: "none",
+              borderRadius: "4px",
+              cursor: "pointer",
+              fontSize: "14px",
+              fontWeight: "bold",
+              zIndex: 100,
+            }}
+            onClick={async () => {
+              if (excalidrawAPI) {
+                // https://liblibai-tmp-image.liblib.cloud/img/1a5a53cfca8e43b797ac32e91ec40bf4/fc71a2c32ed04a762ca7d10ef895ed33559acf72cbdb8a41500bd43c91efaedf.png
+                await importImageFromUrl("");
+              }
+            }}
+          >
+            导入图片
+          </button>
+        );
 
-          // 导入逻辑结束
-          if (isMobile || !collabAPI || isCollabDisabled) {
-            return (
-              <div className="excalidraw-ui-top-right">{importImageButton}</div>
-            );
-          }
-
+        // 导入逻辑结束
+        if (isMobile || !collabAPI || isCollabDisabled) {
           return (
-            <div className="excalidraw-ui-top-right">
-              {importImageButton}
-              <button
-                onClick={() => {
-                  setShowImageSidebar(true);
-                  consola.log("打开空侧边栏");
-                }}
-                className="ToolButton"
-                style={{ marginLeft: "8px" }}
-              >
-                打开空侧边栏
-              </button>
-              {excalidrawAPI?.getEditorInterface().formFactor === "desktop" && (
-                <ExcalidrawPlusPromoBanner
-                  isSignedIn={isExcalidrawPlusSignedUser}
-                />
-              )}
-
-              {collabError.message && <CollabError collabError={collabError} />}
-              <LiveCollaborationTrigger
-                isCollaborating={isCollaborating}
-                onSelect={() =>
-                  setShareDialogState({ isOpen: true, type: "share" })
-                }
-                editorInterface={editorInterface}
-              />
-            </div>
+            <div className="excalidraw-ui-top-right">{importImageButton}</div>
           );
-        }}
-        onLinkOpen={(element, event) => {
-          if (element.link && isElementLink(element.link)) {
-            event.preventDefault();
-            excalidrawAPI?.scrollToContent(element.link, { animate: true });
-          }
-        }}
-      >
+        }
+
+        return (
+          <div className="excalidraw-ui-top-right">
+            {importImageButton}
+            <button
+              onClick={() => {
+                setShowImageSidebar(true);
+                DefaultLogger.log("打开空侧边栏");
+              }}
+              className="ToolButton"
+              style={{ marginLeft: "8px" }}
+            >
+              打开空侧边栏
+            </button>
+            {excalidrawAPI?.getEditorInterface().formFactor === "desktop" && (
+              <ExcalidrawPlusPromoBanner
+                isSignedIn={isExcalidrawPlusSignedUser}
+              />
+            )}
+
+            {collabError.message && <CollabError collabError={collabError} />}
+            <LiveCollaborationTrigger
+              isCollaborating={isCollaborating}
+              onSelect={() =>
+                setShareDialogState({ isOpen: true, type: "share" })
+              }
+              editorInterface={editorInterface}
+            />
+          </div>
+        );
+      }} onLinkOpen={(element, event) => {
+        if (element.link && isElementLink(element.link)) {
+          event.preventDefault();
+          excalidrawAPI?.scrollToContent(element.link, { animate: true });
+        }
+      }}>
         {/* 画布主体 */}
         <AppMainMenu
           onCollabDialogOpen={onCollabDialogOpen}
@@ -1527,11 +1512,11 @@ const ExcalidrawWrapper = () => {
             },
             ...(isExcalidrawPlusSignedUser
               ? [
-                  {
-                    ...ExcalidrawPlusAppCommand,
-                    label: "Sign in / Go to Excalidraw+",
-                  },
-                ]
+                {
+                  ...ExcalidrawPlusAppCommand,
+                  label: "Sign in / Go to Excalidraw+",
+                },
+              ]
               : [ExcalidrawPlusCommand, ExcalidrawPlusAppCommand]),
 
             {
